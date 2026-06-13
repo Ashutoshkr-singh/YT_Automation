@@ -1,101 +1,274 @@
 import os
-import whisper
-from moviepy.editor import VideoFileClip, concatenate_videoclips
-import requests
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import re
 import json
-import ast
+import argparse
+import asyncio
+import whisper
+import requests
+import subprocess
+import shutil
+import edge_tts
+import time
+import math
+import random
+import urllib.request
+import random
+from gradio_client import Client, handle_file
 
-# Step 1: Transcribe the Video
-def transcribe_video(video_path, model_name="base"):
-    model = whisper.load_model(model_name)
-    audio_path = "temp_audio.wav"
-    os.system(f"ffmpeg -i {video_path} -ar 16000 -ac 1 -b:a 64k -f mp3 {audio_path}")
+def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.wav"):
+    print("➔ Downloading audio track for transcription...")
+    try:
+        ytdlp_exe = r"C:\Users\found\Clip-Anything\venv\Scripts\yt-dlp.exe"
+        subprocess.run([
+            ytdlp_exe,
+            "-x", "--audio-format", "wav",
+            "-o", output_path.replace(".wav", ""),
+            youtube_url
+        ], check=True, capture_output=True)
+    except Exception as e:
+        print(f"yt-dlp audio error: {e}")
+        raise
+    return output_path
+
+def download_youtube_video(youtube_url, start_time, end_time, output_path):
+    print(f"➔ Downloading high-quality segment ({start_time}s to {end_time}s) for final render...")
+    try:
+        ytdlp_exe = r"C:\Users\found\Clip-Anything\venv\Scripts\yt-dlp.exe"
+        subprocess.run([
+            ytdlp_exe,
+            "--download-sections", f"*{start_time}-{end_time}",
+            "--force-keyframes-at-cuts",
+            "-f", "bestvideo+bestaudio/best",
+            "--merge-output-format", "mp4",
+            "-o", output_path,
+            youtube_url
+        ], check=True, capture_output=True)
+    except Exception as e:
+        print(f"yt-dlp video error: {e}")
+        raise
+    return output_path
+
+def get_unique_background_music(index, sport_type):
+    print(f"➔ Sourcing hype background track for Video #{index+1}...")
+    music_styles = [
+        f"ytsearch1: {sport_type} hype background music royalty free phonk",
+        f"ytsearch1: NCS aggressive bass drop beat for {sport_type}",
+        f"ytsearch1: cinematic epic {sport_type} background music no copyright"
+    ]
+    search_query = random.choice(music_styles)
+    output_base = f"bg_music_{index}"
+    
+    import yt_dlp
+    ydl_opts = {
+        'format': 'bestaudio/best', 'outtmpl': f'{output_base}.%(ext)s',
+        'ffmpeg_location': r'C:\Users\found\Clip-Anything\venv\Scripts\ffmpeg.exe',
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+        'noplaylist': True,
+        'quiet': True, 'no_warnings': True,
+        'extractor_args': {'youtube': ['player_client=ios,default']}
+    }
+    try:
+        if os.path.exists(f"{output_base}.mp3"): os.remove(f"{output_base}.mp3")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([search_query])
+        if os.path.exists(f"{output_base}.mp3"): return f"{output_base}.mp3"
+        return None
+    except Exception: return None
+
+def transcribe_audio(audio_path):
+    print("➔ Loading Whisper AI to map the original commentator...")
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA not available in PyTorch")
+        model = whisper.load_model("base", device="cuda")
+    except Exception as e:
+        print(f"   ⚠️ GPU Acceleration failed. Falling back to CPU... Error: {str(e)[:100]}")
+        model = whisper.load_model("base", device="cpu")
+    
     result = model.transcribe(audio_path)
-    transcription = []
-    for segment in result['segments']:
-        transcription.append({
-            'start': segment['start'],
-            'end': segment['end'],
-            'text': segment['text'].strip()
-        })
-    return transcription
+    return [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()} for s in result['segments']]
+
+def get_viral_scripts(transcript_data, user_query):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key: raise ValueError("CRITICAL ERROR: GEMINI_API_KEY missing.")
     
-def get_relevant_segments(transcript, user_query):
-    prompt = f"""You are an expert video editor who can read video transcripts and perform video editing. Given a transcript with segments, your task is to identify all the conversations related to a user query. Follow these guidelines when choosing conversations. A group of continuous segments in the transcript is a conversation.
+    transcript_text = "\n".join([f"[{s['start']:.1f}s - {s['end']:.1f}s] {s['text']}" for s in transcript_data])
+    
+    system_prompt = """You are an elite, multi-million-subscriber viral YouTube Shorts producer. Your ONLY goal is GUARANTEED VIRALITY.
+Analyze the transcript and isolate the 5 absolute most mind-blowing, high-energy action sequences based on the query. Ignore boring commentary. Focus ONLY on jaw-dropping moments, massive plays, insane highlights, or shocking events that will instantly hook a viewer and make them share the video. 
+Each clip must be between 20 and 30 seconds long.
 
-Guidelines:
-1. The conversation should be relevant to the user query. The conversation should include more than one segment to provide context and continuity.
-2. Include all the before and after segments needed in a conversation to make it complete.
-3. The conversation should not cut off in the middle of a sentence or idea.
-4. Choose multiple conversations from the transcript that are relevant to the user query.
-5. Match the start and end time of the conversations using the segment timestamps from the transcript.
-6. The conversations should be a direct part of the video and should not be out of context.
+CRITICAL — HOOK SCRIPT RULES:
+For each clip, write a SHORT, EXPLOSIVE 2-second intro script for a female sports commentator. These must be SCROLL-STOPPING openers that feel like a live broadcast reaction, NOT a question.
 
-Output format: {{ "conversations": [{{"start": "s1", "end": "e1"}}, {{"start": "s2", "end": "e2"}}] }}
+GOOD examples (use this aggressive, direct style):
+- "WHAT. A. STRIKE! This is absolutely INSANE!"
+- "OH MY GOD! LOOK AT THAT!"
+- "NO WAY! He just did the IMPOSSIBLE!"
+- "THIS IS UNREAL! Watch this!"
+- "GOAAAAL! The crowd goes WILD!"
 
-Transcript:
-{transcript}
+BAD examples (NEVER use these weak styles):
+- "You won't believe what happens next" (too generic, clickbait)
+- "Watch until the end" (boring)
+- "This might be the craziest play" (too soft, uses 'might')
 
-User query:
-{user_query}"""
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer groq-key"
-    }
+The hook must sound like someone who just witnessed something incredible LIVE and is reacting with pure adrenaline. Use CAPS for emphasis words. Keep it under 8 words.
 
-    data = {
-        "messages": [
-            {
-                "role": "system",
-                "content": prompt
-            }
-        ],
-        "model": "llama-3.1-70b-versatile",
-        "temperature": 1,
-        "max_tokens": 1024,
-        "top_p": 1,
-        "stream": False,
-        "stop": None
-    }
-    response = requests.post(url, headers=headers, json=data)
-    data = response.json()["choices"][0]["message"]["content"]
-    conversations = ast.literal_eval(data)["conversations"]
-    return conversations
+Also, determine the specific sport (e.g., "Football", "Hockey", "Cricket") so we can source the perfect hype track.
+Output strictly valid JSON. Format: { "sport_type": "Football", "clips": [{"start": 10.5, "end": 35.0, "hook_script": "WHAT A STRIKE! Absolutely UNREAL!"}] }"""
 
-def edit_video(original_video_path, segments, output_video_path, fade_duration=0.5):
-    video = VideoFileClip(original_video_path)
-    clips = []
-    for seg in segments:
-        start = seg['start']
-        end = seg['end']
-        clip = video.subclip(start, end).fadein(fade_duration).fadeout(fade_duration)
-        clips.append(clip)
-    if clips:
-        final_clip = concatenate_videoclips(clips, method="compose")
-        final_clip.write_videofile(output_video_path, codec="libx264", audio_codec="aac")
-    else:
-        print("No segments to include in the edited video.")
+    available_models = []
+    try:
+        models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        res = requests.get(models_url).json()
+        available_models = [m['name'] for m in res.get('models', [])]
+    except Exception: pass
+    
+    flash_models = sorted([m for m in available_models if "flash" in m], reverse=True)
+    pro_models = sorted([m for m in available_models if "pro" in m], reverse=True)
+    model_queue = flash_models + pro_models
+    if not model_queue: model_queue = ["models/gemini-1.5-pro"]
 
-# Main Function
+    for target_model in model_queue:
+        url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={api_key}"
+        data = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": f"Query: {user_query}\n\nTranscript:\n{transcript_text}"}]}],
+            "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"}
+        }
+        for attempt in range(3):
+            try:
+                response = requests.post(url, headers={"Content-Type": "application/json"}, json=data, timeout=60)
+                if response.status_code == 200:
+                    response_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                    if not json_match: raise ValueError(f"AI did not return JSON: {response_text}")
+                    return json.loads(json_match.group(0))
+                elif response.status_code in [503, 429, 404]: break
+                else: raise RuntimeError(f"API Error ({response.status_code}): {response.text}")
+            except requests.exceptions.RequestException as e:
+                print(f"      ⚠️ Network hiccup ({e}). Retrying {attempt+1}/3...")
+                time.sleep(3)
+        continue
+    raise RuntimeError("CRITICAL: All AI models overloaded or network failed.")
+
+async def generate_voiceover(text, output_path):
+    communicate = edge_tts.Communicate(text, "en-US-AriaNeural", rate="+25%", pitch="+8Hz")
+    await communicate.save(output_path)
+
+def build_subtitles_from_original(transcript_data, start_time, end_time, srt_path):
+    clip_segments = [s for s in transcript_data if s['end'] > start_time and s['start'] < end_time]
+    with open(srt_path, 'w', encoding='utf-8') as f:
+        for idx, seg in enumerate(clip_segments):
+            s_time = max(0, seg['start'] - start_time)
+            e_time = min(end_time - start_time, seg['end'] - start_time)
+            def fmt(sec): return f"{int(sec//3600):02d}:{int((sec%3600)//60):02d}:{int(sec%60):02d},{int((sec%1)*1000):03d}"
+            f.write(f"{idx+1}\n{fmt(s_time)} --> {fmt(e_time)}\n{seg['text']}\n\n")
+
+def get_video_duration(video_path, fallback_duration=15.0):
+    try:
+        result = subprocess.run([
+            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', video_path
+        ], capture_output=True, text=True)
+        duration_str = result.stdout.strip()
+        if duration_str == 'N/A' or not duration_str:
+            return float(fallback_duration)
+        return float(duration_str)
+    except Exception:
+        return float(fallback_duration)
+
+def compose_hybrid_video(local_segment_video, clip, idx, hook_voice, bg_music, transcript, output_dir):
+    output_vid = os.path.join(output_dir, f"Viral_Short_{idx+1}.mp4")
+    srt_path = f"temp_subs_{idx+1}.srt"
+    
+    build_subtitles_from_original(transcript, clip['start'], clip['end'], srt_path)
+    permanent_srt = os.path.join(output_dir, f"Viral_Short_{idx+1}.srt")
+    shutil.copy(srt_path, permanent_srt)
+    print(f"   📝 SRT preserved for YouTube upload: {permanent_srt}")
+    
+    public_dir = os.path.join("bouncy-subs", "public")
+    os.makedirs(public_dir, exist_ok=True)
+    
+    shutil.copy(local_segment_video, os.path.join(public_dir, "current_video.mp4"))
+    shutil.copy(srt_path, os.path.join(public_dir, "current_subs.srt"))
+    
+    bg_target = os.path.join(public_dir, "current_bg.mp3")
+    if bg_music and os.path.exists(bg_music):
+        shutil.copy(bg_music, bg_target)
+    elif os.path.exists(bg_target):
+        os.remove(bg_target)
+
+    hook_target = os.path.join(public_dir, "current_hook.mp3")
+    if hook_voice and os.path.exists(hook_voice):
+        shutil.copy(hook_voice, hook_target)
+    elif os.path.exists(hook_target):
+        os.remove(hook_target)
+
+    print(f"   🎬 Rendering Premium Cinematic Edit #{idx+1} with Remotion...")
+    
+    vid_duration = get_video_duration(local_segment_video, fallback_duration=(clip['end'] - clip['start']))
+        
+    total_frames = int(vid_duration * 60)
+    
+    props = json.dumps({
+        "videoDuration": vid_duration,
+        "totalFrames": total_frames
+    })
+    
+    output_vid_abs = os.path.abspath(output_vid)
+    subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--scale=4", "--jpeg-quality=100"], cwd="bouncy-subs")
+    print(f"   ✅ Saved: {output_vid}")
+
 def main():
-    # Paths
-    input_video = "input_video.mp4"
-    output_video = "edited_output.mp4"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url", required=True)
+    parser.add_argument("--prompt", required=True)
+    args = parser.parse_args()
 
-    # User Query
-    user_query = "Find all clips where there is discussion around  GPT-4 Turbo"
+    try:
+        import urllib.parse as urlparse
+        parsed = urlparse.urlparse(args.url)
+        vid_id = urlparse.parse_qs(parsed.query).get('v', ['output'])[0] if 'youtube.com' in args.url else args.url.split('/')[-1]
+        out_dir = f"Output_{vid_id}"
+        os.makedirs(out_dir, exist_ok=True)
+        print(f"📁 All final assets will be saved to: {out_dir}")
 
-    # Step 1: Transcribe
-    print("Transcribing video...")
-    transcription = transcribe_video(input_video, model_name="base")
-   
-    relevant_segments = get_relevant_segments(transcription, user_query)
-    
-    # Step 5: Edit Video
-    print("Editing video...")
-    edit_video(input_video, relevant_segments, output_video)
-    print(f"Edited video saved to {output_video}")
+        audio_file = download_full_audio_for_whisper(args.url)
+        transcript = transcribe_audio(audio_file)
+        ai_response = get_viral_scripts(transcript, args.prompt)
+        
+        sport_type = ai_response.get("sport_type", "epic sports")
+        viral_clips = ai_response.get("clips", [])
+        
+        for i, clip in enumerate(viral_clips):
+            print(f"\n➔ Processing Hybrid Short #{i+1}")
+            print(f"   🗣️ Avatar Hook Script: \"{clip['hook_script']}\"")
+            
+            # --- 4. EXTRACT HIGH-QUALITY SEGMENT ---
+            print("\n[Step 4] Downloading Ultra-HD Segment...")
+            segment_video = os.path.join(out_dir, f"segment_{i}.mp4")
+            if not os.path.exists(segment_video):
+                download_youtube_video(args.url, clip['start'], clip['end'], segment_video)
+            
+            hook_voice = f"temp_hook_{i+1}.mp3"
+            bg_music = get_unique_background_music(i, sport_type)
+            
+            asyncio.run(generate_voiceover(clip['hook_script'], hook_voice))
+            
+            compose_hybrid_video(segment_video, clip, i, hook_voice, bg_music, transcript, out_dir)
+            
+            for file in [hook_voice, bg_music, segment_video]:
+                if file and os.path.exists(file): os.remove(file)
+            
+        if os.path.exists(audio_file): os.remove(audio_file)
+        print("\n🎉 PRODUCTION COMPLETE! High-Fidelity files ready for YouTube.")
+    except Exception as e:
+        print(f"\n❌ PIPELINE HALTED: {e}")
 
 if __name__ == "__main__":
     main()
