@@ -117,20 +117,14 @@ def fetch_recent_videos(max_videos: int = 15) -> list[dict]:
 
 def is_highlight_video(title: str, duration: int) -> bool:
     """
-    Check if a video is likely a highlights/recap video based on title keywords.
-    Duration check is lenient because --flat-playlist doesn't always return it.
+    Process EVERY video uploaded to the channel, not just highlights.
+    We only filter out Shorts (<30s) and extremely long full matches (>3 hours)
+    to prevent pipeline crashes on massive files.
     """
-    title_lower = title.lower()
-    has_keyword = any(kw in title_lower for kw in HIGHLIGHT_KEYWORDS)
-
-    # If we have duration info, filter out very short clips (<1 min) 
-    # or very long videos (>45 min). Otherwise, trust keywords.
     if duration and duration > 0:
-        is_right_length = 60 <= duration <= 2700
-        return has_keyword and is_right_length
+        return 30 <= duration <= 10800
 
-    # No duration data available — rely on title keywords only
-    return has_keyword
+    return True
 
 
 def find_new_highlights(max_videos: int = 15) -> list[dict]:
