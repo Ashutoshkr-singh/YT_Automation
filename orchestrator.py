@@ -45,23 +45,10 @@ log = logging.getLogger("orchestrator")
 
 # ─────────────────────────── Config ───────────────────────────
 PROJECT_ROOT = pathlib.Path(__file__).parent
-import sys
 PYTHON_EXE = sys.executable
 APP_PY = str(PROJECT_ROOT / "app.py")
 UPLOAD_PY = str(PROJECT_ROOT / "upload.py")
-SEO_AGENT = pathlib.Path(r"C:\Users\found\Videos\seo_agent\auto_yt_agent.py")
-SEO_DROP_ZONE = pathlib.Path(r"C:\Users\found\Videos\seo_agent\Drop_Zone_Videos")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-
-# Load .env from SEO agent for API key if not already set
-if not GEMINI_API_KEY:
-    seo_env = SEO_AGENT.parent / ".env"
-    if seo_env.exists():
-        for line in seo_env.read_text().splitlines():
-            if line.startswith("GEMINI_API_KEY="):
-                GEMINI_API_KEY = line.split("=", 1)[1].strip()
-                os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-                break
 
 
 # ─────────────────────────── Step 1: Monitor ──────────────────

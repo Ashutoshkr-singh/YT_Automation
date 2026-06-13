@@ -20,9 +20,6 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
       - name: Set up Node.js for Remotion
         uses: actions/setup-node@v4
         with:
@@ -35,6 +32,17 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/ffmpeg
+          key: ffmpeg-${{ runner.os }}
+
+      - name: Install FFmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -43,7 +51,7 @@ jobs:
       - name: Install Remotion dependencies
         run: |
           cd bouncy-subs
-          npm install
+          npm ci --prefer-offline
 
       - name: Restore YouTube OAuth Token
         run: |
@@ -61,6 +69,7 @@ jobs:
           python orchestrator.py
 
       - name: Save Processed State
+        if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"

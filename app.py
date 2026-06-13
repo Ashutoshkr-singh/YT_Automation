@@ -91,7 +91,8 @@ def get_unique_background_music(index, sport_type):
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
         'noplaylist': True,
         'quiet': True, 'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,default']}
+        'extractor_args': {'youtube': ['player_client=ios,default']},
+        'remote_components': {'ejs': {'github': True}},
     }
     # Use cookies if available
     if os.path.exists("cookies.txt"):
@@ -145,7 +146,7 @@ BAD examples (NEVER use these weak styles):
 The hook must sound like someone who just witnessed something incredible LIVE and is reacting with pure adrenaline. Use CAPS for emphasis words. Keep it under 8 words.
 
 Also, determine the specific sport (e.g., "Football", "Hockey", "Cricket") so we can source the perfect hype track.
-Output strictly valid JSON. Format: { "sport_type": "Football", "clips": [{"start": 10.5, "end": 35.0, "hook_script": "WHAT A STRIKE! Absolutely UNREAL!"}] }"""
+Output strictly valid JSON. Format: { "sport_type": "Football", "clips": [{"start": 10.5, "end": 35.0, "hook_script": "WHAT A STRIKE! Absolutely UNREAL!", "title": "INSANE Goal You Have To See! 🔥⚽", "description": "Watch this incredible goal that left everyone speechless! #football #fifa #worldcup", "tags": ["football", "fifa", "world cup", "goals", "highlights", "viral"]}] }"""
 
     available_models = []
     try:
