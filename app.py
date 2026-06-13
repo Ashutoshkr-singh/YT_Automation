@@ -223,7 +223,7 @@ def compose_hybrid_video(local_segment_video, clip, idx, hook_voice, bg_music, t
     })
     
     output_vid_abs = os.path.abspath(output_vid)
-    subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--scale=4", "--jpeg-quality=100"], cwd="bouncy-subs")
+    subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--scale=4", "--jpeg-quality=100", "--video-bitrate=50M", "--audio-bitrate=320k", "--pixel-format=yuv420p"], cwd="bouncy-subs")
     print(f"   ✅ Saved: {output_vid}")
 
 def main():
