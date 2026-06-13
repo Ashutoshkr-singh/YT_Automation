@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip' # Instantly restores Python packages
+          cache: 'pip'
 
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -27,8 +27,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm' # Instantly restores npm packages
+          cache: 'npm'
           cache-dependency-path: 'bouncy-subs/package-lock.json'
+
+      - name: Install Deno (JS runtime for yt-dlp)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
 
       - name: Install Python dependencies
         run: |
@@ -43,6 +48,10 @@ jobs:
       - name: Restore YouTube OAuth Token
         run: |
           echo "${{ secrets.YOUTUBE_TOKEN_BASE64 }}" | base64 --decode > token.pickle
+
+      - name: Write fresh YouTube cookies
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 --decode > cookies.txt
 
       - name: Run Orchestrator Pipeline
         env:

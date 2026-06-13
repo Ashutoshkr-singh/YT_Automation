@@ -18,41 +18,61 @@ import urllib.request
 import random
 from gradio_client import Client, handle_file
 
+def _ytdlp_base_args():
+    """Return base yt-dlp args with cookies if available."""
+    import shutil
+    exe = shutil.which("yt-dlp") or "yt-dlp"
+    args = [exe]
+    if os.path.exists("cookies.txt"):
+        args += ["--cookies", "cookies.txt"]
+    return args
+
 def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.mp3"):
     print("➔ Downloading audio track for transcription...")
+    cmd = _ytdlp_base_args() + [
+        "-x", "--audio-format", "mp3",
+        "-o", output_path.replace(".mp3", ""),
+        youtube_url
+    ]
     try:
-        import shutil
-        ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
-        subprocess.run([
-            ytdlp_exe,
-            "--cookies", "cookies.txt",
-            "-x", "--audio-format", "mp3",
-            "-o", output_path.replace(".mp3", ""),
-            youtube_url
-        ], check=True, capture_output=True)
-    except subprocess.CalledProcessError as e:
-        print(f"yt-dlp audio error: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else e}")
-        raise
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8', errors='ignore')
+            print(f"yt-dlp audio stderr: {stderr}")
+            # If cookies failed, retry without cookies
+            if "cookies" in stderr.lower() or "bot" in stderr.lower():
+                print("   ↻ Retrying without cookies...")
+                cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
+                result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=300)
+            if result.returncode != 0:
+                raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("yt-dlp audio download timed out after 5 minutes")
     return output_path
 
 def download_youtube_video(youtube_url, start_time, end_time, output_path):
     print(f"➔ Downloading high-quality segment ({start_time}s to {end_time}s) for final render...")
+    cmd = _ytdlp_base_args() + [
+        "--download-sections", f"*{start_time}-{end_time}",
+        "--force-keyframes-at-cuts",
+        "-f", "bestvideo+bestaudio/best",
+        "--merge-output-format", "mp4",
+        "-o", output_path,
+        youtube_url
+    ]
     try:
-        import shutil
-        ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
-        subprocess.run([
-            ytdlp_exe,
-            "--cookies", "cookies.txt",
-            "--download-sections", f"*{start_time}-{end_time}",
-            "--force-keyframes-at-cuts",
-            "-f", "bestvideo+bestaudio/best",
-            "--merge-output-format", "mp4",
-            "-o", output_path,
-            youtube_url
-        ], check=True, capture_output=True)
-    except subprocess.CalledProcessError as e:
-        print(f"yt-dlp video error: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else e}")
-        raise
+        result = subprocess.run(cmd, capture_output=True, timeout=600)
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8', errors='ignore')
+            print(f"yt-dlp video stderr: {stderr}")
+            if "cookies" in stderr.lower() or "bot" in stderr.lower():
+                print("   ↻ Retrying without cookies...")
+                cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
+                result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=600)
+            if result.returncode != 0:
+                raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("yt-dlp video download timed out after 10 minutes")
     return output_path
 
 def get_unique_background_music(index, sport_type):
@@ -68,12 +88,14 @@ def get_unique_background_music(index, sport_type):
     import yt_dlp
     ydl_opts = {
         'format': 'bestaudio/best', 'outtmpl': f'{output_base}.%(ext)s',
-        'ffmpeg_location': r'C:\Users\found\Clip-Anything\venv\Scripts\ffmpeg.exe',
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
         'noplaylist': True,
         'quiet': True, 'no_warnings': True,
         'extractor_args': {'youtube': ['player_client=ios,default']}
     }
+    # Use cookies if available
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = 'cookies.txt'
     try:
         if os.path.exists(f"{output_base}.mp3"): os.remove(f"{output_base}.mp3")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([search_query])
