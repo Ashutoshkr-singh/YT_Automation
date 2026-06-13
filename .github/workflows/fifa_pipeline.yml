@@ -2,8 +2,8 @@ name: FIFA Automation Pipeline
 
 on:
   schedule:
-    # Run every hour to continuously monitor for new videos
-    - cron: '0 * * * *'
+    # Run at minute 30 of every UTC hour (which is the top of the hour in IST)
+    - cron: '30 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
