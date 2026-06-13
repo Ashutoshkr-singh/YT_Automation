@@ -19,10 +19,10 @@ import random
 from gradio_client import Client, handle_file
 
 def _ytdlp_base_args():
-    """Return base yt-dlp args with cookies if available."""
+    """Return base yt-dlp args with cookies and JS solver if available."""
     import shutil
     exe = shutil.which("yt-dlp") or "yt-dlp"
-    args = [exe]
+    args = [exe, "--remote-components", "ejs:github"]
     if os.path.exists("cookies.txt"):
         args += ["--cookies", "cookies.txt"]
     return args

@@ -69,7 +69,7 @@ def fetch_recent_videos(max_videos: int = 15) -> list[dict]:
 
     log.info("🔍  Scanning FIFA channel for new uploads...")
 
-    cmd = [YTDLP_EXE]
+    cmd = [YTDLP_EXE, "--remote-components", "ejs:github"]
     # Add cookies if available
     cookies_path = pathlib.Path(__file__).parent / "cookies.txt"
     if cookies_path.exists():
