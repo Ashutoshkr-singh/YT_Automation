@@ -18,19 +18,20 @@ import urllib.request
 import random
 from gradio_client import Client, handle_file
 
-def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.wav"):
+def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.mp3"):
     print("➔ Downloading audio track for transcription...")
     try:
         import shutil
         ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
         subprocess.run([
             ytdlp_exe,
-            "-x", "--audio-format", "wav",
-            "-o", output_path.replace(".wav", ""),
+            "--cookies", "cookies.txt",
+            "-x", "--audio-format", "mp3",
+            "-o", output_path.replace(".mp3", ""),
             youtube_url
         ], check=True, capture_output=True)
-    except Exception as e:
-        print(f"yt-dlp audio error: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"yt-dlp audio error: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else e}")
         raise
     return output_path
 
@@ -41,6 +42,7 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
         ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
         subprocess.run([
             ytdlp_exe,
+            "--cookies", "cookies.txt",
             "--download-sections", f"*{start_time}-{end_time}",
             "--force-keyframes-at-cuts",
             "-f", "bestvideo+bestaudio/best",
@@ -48,8 +50,8 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
             "-o", output_path,
             youtube_url
         ], check=True, capture_output=True)
-    except Exception as e:
-        print(f"yt-dlp video error: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"yt-dlp video error: {e.stderr.decode('utf-8', errors='ignore') if e.stderr else e}")
         raise
     return output_path
 
