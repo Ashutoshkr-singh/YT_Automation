@@ -21,7 +21,8 @@ from gradio_client import Client, handle_file
 def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.wav"):
     print("➔ Downloading audio track for transcription...")
     try:
-        ytdlp_exe = r"C:\Users\found\Clip-Anything\venv\Scripts\yt-dlp.exe"
+        import shutil
+        ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
         subprocess.run([
             ytdlp_exe,
             "-x", "--audio-format", "wav",
@@ -36,7 +37,8 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
 def download_youtube_video(youtube_url, start_time, end_time, output_path):
     print(f"➔ Downloading high-quality segment ({start_time}s to {end_time}s) for final render...")
     try:
-        ytdlp_exe = r"C:\Users\found\Clip-Anything\venv\Scripts\yt-dlp.exe"
+        import shutil
+        ytdlp_exe = shutil.which("yt-dlp") or "yt-dlp"
         subprocess.run([
             ytdlp_exe,
             "--download-sections", f"*{start_time}-{end_time}",

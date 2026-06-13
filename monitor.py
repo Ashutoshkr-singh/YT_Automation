@@ -31,7 +31,8 @@ log = logging.getLogger("fifa_monitor")
 # ─────────────────────────── Config ───────────────────────────
 FIFA_CHANNEL_ID = "UCpcTrCXblq78GZrTUTLWeBw"
 STATE_FILE = pathlib.Path(__file__).parent / "monitor_state.json"
-YTDLP_EXE = r"C:\Users\found\Clip-Anything\venv\Scripts\yt-dlp.exe"
+import shutil
+YTDLP_EXE = shutil.which("yt-dlp") or "yt-dlp"
 
 # Keywords to filter for highlight/recap videos
 HIGHLIGHT_KEYWORDS = [
