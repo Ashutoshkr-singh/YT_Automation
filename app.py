@@ -264,6 +264,13 @@ def main():
             
             compose_hybrid_video(segment_video, clip, i, hook_voice, bg_music, transcript, out_dir)
             
+            # Save SEO metadata for the uploader
+            md_path = os.path.join(out_dir, f"Viral_Short_{i+1}.md")
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(f"### 1. Title\n{clip.get('title', f'Epic Football Moment #{i+1}')}\n\n")
+                f.write(f"### 3. Description\n{clip.get('description', 'Incredible football highlights!')}\n\n")
+                f.write(f"### 4. Tags\n{', '.join(clip.get('tags', ['football', 'fifa']))}\n")
+            
             for file in [hook_voice, bg_music, segment_video]:
                 if file and os.path.exists(file): os.remove(file)
             

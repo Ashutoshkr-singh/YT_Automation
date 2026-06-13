@@ -45,7 +45,8 @@ log = logging.getLogger("orchestrator")
 
 # ─────────────────────────── Config ───────────────────────────
 PROJECT_ROOT = pathlib.Path(__file__).parent
-PYTHON_EXE = str(PROJECT_ROOT / "venv" / "Scripts" / "python.exe")
+import sys
+PYTHON_EXE = sys.executable
 APP_PY = str(PROJECT_ROOT / "app.py")
 UPLOAD_PY = str(PROJECT_ROOT / "upload.py")
 SEO_AGENT = pathlib.Path(r"C:\Users\found\Videos\seo_agent\auto_yt_agent.py")
@@ -135,133 +136,24 @@ def generate_clips(youtube_url: str, num_clips: int = 3) -> str | None:
 
 def run_seo_on_clips(output_dir: str) -> list[str]:
     """
-    Copy each generated clip to the SEO agent's Drop Zone, then run
-    the SEO agent to generate metadata. Returns list of .md file paths.
-    
-    Instead of running the full watchdog-based agent, we directly import
-    the core processing functions from auto_yt_agent.py for reliability.
+    Since app.py now natively generates SEO metadata alongside the clips,
+    we just need to locate the .md files and return them.
     """
     log.info("=" * 60)
-    log.info("🧠  STEP 3: Running SEO Agent on generated clips...")
+    log.info("🧠  STEP 3: Preparing SEO Metadata for Upload...")
     log.info("=" * 60)
 
     output_path = pathlib.Path(output_dir)
-    clips = sorted(output_path.glob("Viral_Short_*.mp4"))
-
-    if not clips:
-        log.warning("⚠️  No Viral_Short_*.mp4 files found in %s", output_dir)
+    md_files = sorted(output_path.glob("Viral_Short_*.md"))
+    
+    if md_files:
+        log.info("✅  Found %d SEO metadata files.", len(md_files))
+        return [str(f) for f in md_files]
+    else:
+        log.warning("⚠️  No SEO metadata files found.")
         return []
 
-    # Import the SEO agent's core functions
-    sys.path.insert(0, str(SEO_AGENT.parent))
 
-    from google import genai
-    from google.genai import types
-
-    # Initialize Gemini client
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    log.info("🔑  Gemini client initialized for SEO analysis")
-
-    SEO_PROMPT = (
-        "Act as an elite dual-platform Growth Strategist specializing in "
-        "YouTube Shorts/long-form AND Instagram Reels, with deep expertise in "
-        "CTR, AVD, and Reels algorithm optimization.\n\n"
-        "TRENDING CONTEXT: FIFA and football content is currently experiencing "
-        "a massive surge. Think FIFA 26 hype, World Cup 2026, "
-        "transfer window drama, legendary player moments, skills compilations, "
-        "match highlights, and football edits. Lean HARD into this trend.\n\n"
-        "Watch this video file carefully, analyzing the visual pacing, the "
-        "3-second hook, on-screen text, emotional shifts, and audio. "
-        "Generate a DUAL-PLATFORM SEO package formatted exactly as follows:\n\n"
-        "--- YOUTUBE SEO ---\n"
-        "1. Titles (CTR Engine): 5 titles under 60 characters. "
-        "2 Curiosity Gap, 2 High-Emotion/Hype, 1 Direct Search. "
-        "Weave in trending FIFA/football keywords.\n"
-        "2. The Hook Critique: Analyze the first 3 seconds.\n"
-        "3. YouTube Description: A punchy 125-character preview snippet, "
-        "followed by a 3-paragraph keyword-rich natural language summary.\n"
-        "4. YouTube Tags: 3-5 hashtags and 15 semantic long-tail tags.\n\n"
-        "--- INSTAGRAM REELS SEO ---\n"
-        "5. Reels Caption: Scroll-stopping 1-liner caption.\n"
-        "6. Reels Hashtags: 20-25 hashtags in a copy-paste-ready block.\n"
-        "7. Reels Audio Suggestion: 2-3 trending audio tracks.\n"
-        "8. Best Posting Window: Optimal day/time for global audience."
-    )
-
-    md_files = []
-    for clip in clips:
-        log.info("📹  Analyzing: %s", clip.name)
-
-        try:
-            # Upload video to Gemini Files API
-            mime = "video/mp4"
-            uploaded = client.files.upload(
-                file=clip,
-                config=types.UploadFileConfig(
-                    mime_type=mime,
-                    display_name=clip.name,
-                ),
-            )
-            log.info("   ☁️  Uploaded to Gemini: %s", uploaded.name)
-
-            # Wait for processing
-            while True:
-                status = client.files.get(name=uploaded.name)
-                state = status.state.name if hasattr(status.state, "name") else str(status.state)
-                if state == "ACTIVE":
-                    break
-                if state == "FAILED":
-                    log.error("   ❌  Gemini processing failed for %s", clip.name)
-                    break
-                log.info("   ⏳  Processing: %s", state)
-                time.sleep(10)
-
-            if state != "ACTIVE":
-                continue
-
-            # Run inference
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_uri(
-                                file_uri=status.uri,
-                                mime_type=status.mime_type,
-                            ),
-                            types.Part.from_text(text=SEO_PROMPT),
-                        ],
-                    )
-                ],
-            )
-
-            if response.text:
-                # Write .md file next to the clip
-                md_path = clip.with_suffix(".md")
-                header = (
-                    f"# YouTube SEO Metadata — {clip.stem}\n"
-                    f"> Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
-                    f"by FIFA Automation Pipeline\n\n---\n\n"
-                )
-                md_path.write_text(header + response.text, encoding="utf-8")
-                md_files.append(str(md_path))
-                log.info("   ✅  SEO metadata saved: %s", md_path.name)
-            else:
-                log.error("   ❌  Empty response from Gemini for %s", clip.name)
-
-            # Cleanup remote file
-            try:
-                client.files.delete(name=uploaded.name)
-            except Exception:
-                pass
-
-        except Exception as e:
-            log.error("   ❌  SEO error for %s: %s", clip.name, str(e)[:200])
-            continue
-
-    log.info("🎯  SEO metadata generated for %d/%d clips", len(md_files), len(clips))
-    return md_files
 
 
 # ─────────────────────────── Step 4: Upload ───────────────────
