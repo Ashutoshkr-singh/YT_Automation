@@ -55,10 +55,14 @@ def get_authenticated_service():
     credentials = None
 
     # 1. Try loading cached token
-    if os.path.exists(TOKEN_PICKLE_PATH):
+    if os.path.exists(TOKEN_PICKLE_PATH) and os.path.getsize(TOKEN_PICKLE_PATH) > 0:
         print("🔑 Loading cached YouTube credentials...")
-        with open(TOKEN_PICKLE_PATH, "rb") as token_file:
-            credentials = pickle.load(token_file)
+        try:
+            with open(TOKEN_PICKLE_PATH, "rb") as token_file:
+                credentials = pickle.load(token_file)
+        except Exception as e:
+            print(f"   ⚠️ Could not load cached token ({e}). Re-authenticating...")
+            credentials = None
 
     # 2. Refresh or re-authenticate
     if not credentials or not credentials.valid:
