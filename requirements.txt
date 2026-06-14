@@ -1,7 +1,6 @@
-﻿yt-dlp
+yt-dlp
 edge-tts
-openai-whisper
-torch
+
 google-genai
 google-api-python-client
 google-auth-httplib2

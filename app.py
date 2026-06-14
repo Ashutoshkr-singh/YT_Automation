@@ -6,7 +6,7 @@ import re
 import json
 import argparse
 import asyncio
-import whisper
+
 import requests
 import subprocess
 import shutil
@@ -52,7 +52,7 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
                     actual_temp_file = audio_stream.download(filename=temp_file, timeout=120)
-                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True, text=True, timeout=120)
+                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-b:a", "64k", "-map", "a", output_path], capture_output=True, text=True, timeout=120)
                     if os.path.exists(actual_temp_file):
                         os.remove(actual_temp_file)
                     if res.returncode != 0:
@@ -135,17 +135,26 @@ def get_unique_background_music(index, sport_type):
     return None
 
 def transcribe_audio(audio_path):
-    print("➔ Loading Whisper AI to map the original commentator...")
-    try:
-        import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA not available in PyTorch")
-        model = whisper.load_model("base", device="cuda")
-    except Exception as e:
-        print(f"   ⚠️ GPU Acceleration failed. Falling back to CPU... Error: {str(e)[:100]}")
-        model = whisper.load_model("base", device="cpu")
+    print("➔ Transcribing audio with lightning-fast Groq API...")
+    import requests
     
-    result = model.transcribe(audio_path)
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not set in the environment variables.")
+        
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {"model": "whisper-large-v3-turbo", "response_format": "verbose_json"}
+    
+    with open(audio_path, "rb") as f:
+        files = {"file": (os.path.basename(audio_path), f, "audio/mpeg")}
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        
+    if response.status_code != 200:
+        raise RuntimeError(f"Groq transcription failed: {response.text}")
+        
+    result = response.json()
+    
     return [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()} for s in result['segments']]
 
 def get_viral_scripts(transcript_data, user_query):
