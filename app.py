@@ -22,7 +22,7 @@ def _ytdlp_base_args():
     """Return base yt-dlp args with cookies and JS solver if available."""
     import shutil
     exe = shutil.which("yt-dlp") or "yt-dlp"
-    args = [exe, "--remote-components", "ejs:github"]
+    args = [exe, "--remote-components", "ejs:github", "--extractor-args", "youtube:player_client=ios,web_creator,default"]
     if os.path.exists("cookies.txt"):
         args += ["--cookies", "cookies.txt"]
     return args
