@@ -63,8 +63,7 @@ jobs:
 
       - name: Write YouTube OAuth Token
         run: |
-          mkdir -p __pycache__
-          echo '${{ secrets.YOUTUBE_OAUTH_TOKEN }}' > __pycache__/tokens.json
+          python -c "import pytubefix, os; cache_dir = os.path.join(os.path.dirname(pytubefix.__file__), '__cache__'); os.makedirs(cache_dir, exist_ok=True); open(os.path.join(cache_dir, 'tokens.json'), 'w').write('''${{ secrets.YOUTUBE_OAUTH_TOKEN }}''')"
 
       - name: Run Orchestrator Pipeline
         env:
