@@ -62,8 +62,10 @@ jobs:
           echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 --decode > cookies.txt
 
       - name: Write YouTube OAuth Token
+        env:
+          OAUTH_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN }}
         run: |
-          python -c "import pytubefix, os; cache_dir = os.path.join(os.path.dirname(pytubefix.__file__), '__cache__'); os.makedirs(cache_dir, exist_ok=True); open(os.path.join(cache_dir, 'tokens.json'), 'w').write('''${{ secrets.YOUTUBE_OAUTH_TOKEN }}''')"
+          python -c "import pytubefix, os; cache_dir = os.path.join(os.path.dirname(pytubefix.__file__), '__cache__'); os.makedirs(cache_dir, exist_ok=True); text=os.environ.get('OAUTH_JSON', '{}'); start=text.find('{'); end=text.rfind('}'); data=text[start:end+1] if start!=-1 and end!=-1 else '{}'; open(os.path.join(cache_dir, 'tokens.json'), 'w').write(data)"
 
       - name: Run Orchestrator Pipeline
         env:
