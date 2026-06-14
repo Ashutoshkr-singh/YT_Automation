@@ -51,8 +51,8 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
-                    actual_temp_file = audio_stream.download(filename=temp_file)
-                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True, text=True)
+                    actual_temp_file = audio_stream.download(filename=temp_file, timeout=120)
+                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True, text=True, timeout=120)
                     if os.path.exists(actual_temp_file):
                         os.remove(actual_temp_file)
                     if res.returncode != 0:
@@ -92,8 +92,8 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                     prog_stream = yt.streams.filter(file_extension='mp4').order_by('resolution').desc().first()
                 if prog_stream:
                     temp_full = output_path.replace(".mp4", "_full.mp4")
-                    actual_temp_full = prog_stream.download(filename=temp_full)
-                    res = subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", actual_temp_full, "-c:v", "copy", "-c:a", "copy", output_path], capture_output=True, text=True)
+                    actual_temp_full = prog_stream.download(filename=temp_full, timeout=300)
+                    res = subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", actual_temp_full, "-c:v", "copy", "-c:a", "copy", output_path], capture_output=True, text=True, timeout=120)
                     if os.path.exists(actual_temp_full):
                         os.remove(actual_temp_full)
                     if res.returncode != 0:
@@ -106,52 +106,33 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
 
 def get_unique_background_music(index, sport_type):
     print(f"➔ Sourcing hype background track for Video #{index+1}...")
+    import sys; sys.stdout.flush()
     music_styles = [
-        f"ytsearch1: {sport_type} hype background music royalty free phonk",
-        f"ytsearch1: NCS aggressive bass drop beat for {sport_type}",
-        f"ytsearch1: cinematic epic {sport_type} background music no copyright"
+        f"{sport_type} hype background music royalty free phonk",
+        f"NCS aggressive bass drop beat for {sport_type}",
+        f"cinematic epic {sport_type} background music no copyright"
     ]
     search_query = random.choice(music_styles)
     output_base = f"bg_music_{index}"
-    
-    import yt_dlp
-    ydl_opts = {
-        'format': 'bestaudio/best', 'outtmpl': f'{output_base}.%(ext)s',
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
-        'noplaylist': True,
-        'quiet': True, 'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,default']},
-        'remote_components': {'ejs': {'github': True}},
-    }
-    # Use cookies if available
-    if os.path.exists("cookies.txt"):
-        ydl_opts['cookiefile'] = 'cookies.txt'
     try:
-        if os.path.exists(f"{output_base}.mp3"): os.remove(f"{output_base}.mp3")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([search_query])
-        if os.path.exists(f"{output_base}.mp3"): return f"{output_base}.mp3"
-        return None
-    except Exception:
-        print("   ↻ Falling back to pytubefix search...")
-        try:
-            from pytubefix import Search, YouTube
-            s = Search(search_query.replace("ytsearch1:", "").strip())
-            if s.videos:
-                yt = s.videos[0]
-                yt = YouTube(yt.watch_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
-                audio_stream = yt.streams.filter(only_audio=True).first()
-                if audio_stream:
-                    temp_audio = f"{output_base}_temp.mp4"
-                    actual_temp_audio = audio_stream.download(filename=temp_audio)
-                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True)
-                    if os.path.exists(actual_temp_audio):
-                        os.remove(actual_temp_audio)
-                    if res.returncode != 0:
-                        raise RuntimeError(f"ffmpeg bg music extract failed: {res.stderr}")
-                    return f"{output_base}.mp3"
-        except Exception as e:
-            print(f"pytubefix fallback failed: {e}")
-        return None
+        from pytubefix import Search, YouTube
+        s = Search(search_query)
+        if s.videos:
+            yt = s.videos[0]
+            yt = YouTube(yt.watch_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
+            audio_stream = yt.streams.filter(only_audio=True).first()
+            if audio_stream:
+                temp_audio = f"{output_base}_temp.mp4"
+                actual_temp_audio = audio_stream.download(filename=temp_audio, timeout=120)
+                res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True, timeout=120)
+                if os.path.exists(actual_temp_audio):
+                    os.remove(actual_temp_audio)
+                if res.returncode != 0:
+                    raise RuntimeError(f"ffmpeg bg music extract failed: {res.stderr}")
+                return f"{output_base}.mp3"
+    except Exception as e:
+        print(f"   ⚠️ Background music fetch failed: {e}")
+    return None
 
 def transcribe_audio(audio_path):
     print("➔ Loading Whisper AI to map the original commentator...")
@@ -297,9 +278,9 @@ def compose_hybrid_video(local_segment_video, clip, idx, hook_voice, bg_music, t
     })
     
     output_vid_abs = os.path.abspath(output_vid)
-    res = subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--scale=4", "--jpeg-quality=100", "--video-bitrate=50M", "--audio-bitrate=320k", "--pixel-format=yuv420p"], cwd="bouncy-subs", capture_output=True, text=True)
+    res = subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--jpeg-quality=90"], cwd="bouncy-subs", capture_output=False)
     if res.returncode != 0:
-        raise RuntimeError(f"Remotion render failed: {res.stderr}")
+        raise RuntimeError(f"Remotion render failed with exit code {res.returncode}")
     print(f"   ✅ Saved: {output_vid}")
 
 def main():
@@ -324,6 +305,7 @@ def main():
         viral_clips = ai_response.get("clips", [])
         
         for i, clip in enumerate(viral_clips):
+            import sys; sys.stdout.flush()
             print(f"\n➔ Processing Hybrid Short #{i+1}")
             print(f"   🗣️ Avatar Hook Script: \"{clip['hook_script']}\"")
             
