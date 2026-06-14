@@ -51,10 +51,12 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
-                    audio_stream.download(filename=temp_file)
-                    subprocess.run(["ffmpeg", "-y", "-i", temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True)
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
+                    actual_temp_file = audio_stream.download(filename=temp_file)
+                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True, text=True)
+                    if os.path.exists(actual_temp_file):
+                        os.remove(actual_temp_file)
+                    if res.returncode != 0:
+                        raise RuntimeError(f"ffmpeg audio extract failed: {res.stderr}")
                     return output_path
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
     except subprocess.TimeoutExpired:
@@ -85,12 +87,17 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                 from pytubefix import YouTube
                 yt = YouTube(youtube_url, client='WEB', use_oauth=True, allow_oauth_cache=True)
                 prog_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+                if not prog_stream:
+                    # Fallback to the highest quality video stream if no progressive stream is found
+                    prog_stream = yt.streams.filter(file_extension='mp4').order_by('resolution').desc().first()
                 if prog_stream:
                     temp_full = output_path.replace(".mp4", "_full.mp4")
-                    prog_stream.download(filename=temp_full)
-                    subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", temp_full, "-c", "copy", output_path], capture_output=True)
-                    if os.path.exists(temp_full):
-                        os.remove(temp_full)
+                    actual_temp_full = prog_stream.download(filename=temp_full)
+                    res = subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", actual_temp_full, "-c:v", "copy", "-c:a", "copy", output_path], capture_output=True, text=True)
+                    if os.path.exists(actual_temp_full):
+                        os.remove(actual_temp_full)
+                    if res.returncode != 0:
+                        raise RuntimeError(f"ffmpeg crop failed: {res.stderr}")
                     return output_path
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
     except subprocess.TimeoutExpired:
@@ -135,10 +142,12 @@ def get_unique_background_music(index, sport_type):
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_audio = f"{output_base}_temp.mp4"
-                    audio_stream.download(filename=temp_audio)
-                    subprocess.run(["ffmpeg", "-y", "-i", temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True)
-                    if os.path.exists(temp_audio):
-                        os.remove(temp_audio)
+                    actual_temp_audio = audio_stream.download(filename=temp_audio)
+                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True)
+                    if os.path.exists(actual_temp_audio):
+                        os.remove(actual_temp_audio)
+                    if res.returncode != 0:
+                        raise RuntimeError(f"ffmpeg bg music extract failed: {res.stderr}")
                     return f"{output_base}.mp3"
         except Exception as e:
             print(f"pytubefix fallback failed: {e}")
