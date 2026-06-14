@@ -52,7 +52,6 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
                     audio_stream.download(filename=temp_file)
-                    import subprocess
                     subprocess.run(["ffmpeg", "-y", "-i", temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True)
                     if os.path.exists(temp_file):
                         os.remove(temp_file)
@@ -89,7 +88,6 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                 if prog_stream:
                     temp_full = output_path.replace(".mp4", "_full.mp4")
                     prog_stream.download(filename=temp_full)
-                    import subprocess
                     subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", temp_full, "-c", "copy", output_path], capture_output=True)
                     if os.path.exists(temp_full):
                         os.remove(temp_full)
@@ -138,7 +136,6 @@ def get_unique_background_music(index, sport_type):
                 if audio_stream:
                     temp_audio = f"{output_base}_temp.mp4"
                     audio_stream.download(filename=temp_audio)
-                    import subprocess
                     subprocess.run(["ffmpeg", "-y", "-i", temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True)
                     if os.path.exists(temp_audio):
                         os.remove(temp_audio)
