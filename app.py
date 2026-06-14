@@ -47,7 +47,7 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
             if result.returncode != 0:
                 print("   ↻ Falling back to pytubefix for audio...")
                 from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='WEB', use_oauth=True, allow_oauth_cache=True)
+                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
@@ -85,7 +85,7 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
             if result.returncode != 0:
                 print("   ↻ Falling back to pytubefix full video download + ffmpeg crop...")
                 from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='WEB', use_oauth=True, allow_oauth_cache=True)
+                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
                 prog_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
                 if not prog_stream:
                     # Fallback to the highest quality video stream if no progressive stream is found
@@ -138,7 +138,7 @@ def get_unique_background_music(index, sport_type):
             s = Search(search_query.replace("ytsearch1:", "").strip())
             if s.videos:
                 yt = s.videos[0]
-                yt = YouTube(yt.watch_url, client='WEB', use_oauth=True, allow_oauth_cache=True)
+                yt = YouTube(yt.watch_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_audio = f"{output_base}_temp.mp4"
