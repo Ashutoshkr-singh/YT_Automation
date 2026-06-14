@@ -22,7 +22,7 @@ def _ytdlp_base_args():
     """Return base yt-dlp args with cookies and JS solver if available."""
     import shutil
     exe = shutil.which("yt-dlp") or "yt-dlp"
-    args = [exe, "--remote-components", "ejs:github", "--extractor-args", "youtube:player_client=ios,web_creator,default"]
+    args = [exe, "--remote-components", "ejs:github", "--extractor-args", "youtube:player_client=tv,default"]
     if os.path.exists("cookies.txt"):
         args += ["--cookies", "cookies.txt"]
     return args
@@ -45,6 +45,18 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
                 cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
                 result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=300)
             if result.returncode != 0:
+                print("   ↻ Falling back to pytubefix for audio...")
+                from pytubefix import YouTube
+                yt = YouTube(youtube_url, client='WEB')
+                audio_stream = yt.streams.filter(only_audio=True).first()
+                if audio_stream:
+                    temp_file = output_path.replace(".mp3", "_temp")
+                    audio_stream.download(filename=temp_file)
+                    import subprocess
+                    subprocess.run(["ffmpeg", "-y", "-i", temp_file, "-q:a", "0", "-map", "a", output_path], capture_output=True)
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                    return output_path
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
     except subprocess.TimeoutExpired:
         raise RuntimeError("yt-dlp audio download timed out after 5 minutes")
@@ -70,6 +82,18 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                 cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
                 result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=600)
             if result.returncode != 0:
+                print("   ↻ Falling back to pytubefix full video download + ffmpeg crop...")
+                from pytubefix import YouTube
+                yt = YouTube(youtube_url, client='WEB')
+                prog_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+                if prog_stream:
+                    temp_full = output_path.replace(".mp4", "_full.mp4")
+                    prog_stream.download(filename=temp_full)
+                    import subprocess
+                    subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", temp_full, "-c", "copy", output_path], capture_output=True)
+                    if os.path.exists(temp_full):
+                        os.remove(temp_full)
+                    return output_path
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
     except subprocess.TimeoutExpired:
         raise RuntimeError("yt-dlp video download timed out after 10 minutes")
@@ -102,7 +126,26 @@ def get_unique_background_music(index, sport_type):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([search_query])
         if os.path.exists(f"{output_base}.mp3"): return f"{output_base}.mp3"
         return None
-    except Exception: return None
+    except Exception:
+        print("   ↻ Falling back to pytubefix search...")
+        try:
+            from pytubefix import Search
+            s = Search(search_query.replace("ytsearch1:", "").strip())
+            if s.videos:
+                yt = s.videos[0]
+                yt.client = 'WEB'
+                audio_stream = yt.streams.filter(only_audio=True).first()
+                if audio_stream:
+                    temp_audio = f"{output_base}_temp.mp4"
+                    audio_stream.download(filename=temp_audio)
+                    import subprocess
+                    subprocess.run(["ffmpeg", "-y", "-i", temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True)
+                    if os.path.exists(temp_audio):
+                        os.remove(temp_audio)
+                    return f"{output_base}.mp3"
+        except Exception as e:
+            print(f"pytubefix fallback failed: {e}")
+        return None
 
 def transcribe_audio(audio_path):
     print("➔ Loading Whisper AI to map the original commentator...")
