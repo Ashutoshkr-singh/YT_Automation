@@ -61,6 +61,11 @@ jobs:
         run: |
           echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 --decode > cookies.txt
 
+      - name: Write YouTube OAuth Token
+        run: |
+          mkdir -p __pycache__
+          echo '${{ secrets.YOUTUBE_OAUTH_TOKEN }}' > __pycache__/tokens.json
+
       - name: Run Orchestrator Pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
