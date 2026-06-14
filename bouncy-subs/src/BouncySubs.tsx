@@ -114,7 +114,6 @@ export const BouncySubs: React.FC<{ videoDuration: number }> = ({ videoDuration 
       <ImpactFlash />
 
       {/* Audio Layer */}
-      <Audio src={staticFile('whoosh.wav')} volume={0.8} />
       <Audio src={staticFile('current_hook.mp3')} volume={1.0} />
       <Audio src={staticFile('current_bg.mp3')} volume={0.15} />
 
