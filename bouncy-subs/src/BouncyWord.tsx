@@ -50,12 +50,16 @@ export const BouncyWord: React.FC<{
         display: 'inline-block',
         transform: `scale(${scale}) translateY(${translateY}px)`,
         opacity,
-        color: isActive ? '#FFD700' : '#FFFFFF',
-        textShadow: '2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000',
-        fontFamily: 'Inter, sans-serif',
+        color: isActive ? '#FFE81F' : '#FFFFFF',
+        textShadow: isActive
+          ? '0px 0px 20px rgba(255, 232, 31, 0.6), 4px 4px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0px 10px 20px rgba(0,0,0,0.8)'
+          : '4px 4px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0px 10px 20px rgba(0,0,0,0.8)',
+        fontFamily: "'Montserrat', 'Inter', sans-serif",
         fontWeight: 900,
-        fontSize: '72px',
-        margin: '0 10px',
+        fontSize: '78px',
+        textTransform: 'uppercase',
+        letterSpacing: '-2px',
+        margin: '0 12px',
       }}
     >
       {word}

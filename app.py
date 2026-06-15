@@ -83,21 +83,30 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                 cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
                 result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=600)
             if result.returncode != 0:
-                print("   ↻ Falling back to pytubefix full video download + ffmpeg crop...")
+                print("   ↻ Falling back to pytubefix 1080p video + audio merge...")
                 from pytubefix import YouTube
                 yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
-                prog_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
-                if not prog_stream:
-                    # Fallback to the highest quality video stream if no progressive stream is found
-                    prog_stream = yt.streams.filter(file_extension='mp4').order_by('resolution').desc().first()
-                if prog_stream:
-                    temp_full = output_path.replace(".mp4", "_full.mp4")
-                    actual_temp_full = prog_stream.download(filename=temp_full, timeout=300)
-                    res = subprocess.run(["ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time), "-i", actual_temp_full, "-c:v", "copy", "-c:a", "copy", output_path], capture_output=True, text=True, timeout=120)
-                    if os.path.exists(actual_temp_full):
-                        os.remove(actual_temp_full)
+                vid_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
+                aud_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_audio=True).order_by('abr').desc().first()
+                
+                if vid_stream and aud_stream:
+                    temp_vid = output_path.replace(".mp4", "_vid.mp4")
+                    temp_aud = output_path.replace(".mp4", "_aud.mp4")
+                    vid_stream.download(filename=temp_vid, timeout=300)
+                    aud_stream.download(filename=temp_aud, timeout=300)
+                    
+                    # Merge high-quality video and audio while cropping
+                    res = subprocess.run([
+                        "ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time),
+                        "-i", temp_vid, "-ss", str(start_time), "-to", str(end_time),
+                        "-i", temp_aud, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                        output_path
+                    ], capture_output=True, text=True, timeout=120)
+                    
+                    if os.path.exists(temp_vid): os.remove(temp_vid)
+                    if os.path.exists(temp_aud): os.remove(temp_aud)
                     if res.returncode != 0:
-                        raise RuntimeError(f"ffmpeg crop failed: {res.stderr}")
+                        raise RuntimeError(f"ffmpeg merge/crop failed: {res.stderr}")
                     return output_path
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
     except subprocess.TimeoutExpired:
@@ -142,7 +151,7 @@ def transcribe_audio(audio_path):
     if not api_key:
         raise RuntimeError("GROQ_API_KEY is not set in the environment variables.")
         
-    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    url = "https://api.groq.com/openai/v1/audio/translations"
     headers = {"Authorization": f"Bearer {api_key}"}
     data = {"model": "whisper-large-v3-turbo", "response_format": "verbose_json"}
     
@@ -157,14 +166,15 @@ def transcribe_audio(audio_path):
     
     return [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()} for s in result['segments']]
 
-def get_viral_scripts(transcript_data, user_query):
+def get_viral_scripts(transcript_data, user_query, youtube_title):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise ValueError("CRITICAL ERROR: GEMINI_API_KEY missing.")
     
     transcript_text = "\n".join([f"[{s['start']:.1f}s - {s['end']:.1f}s] {s['text']}" for s in transcript_data])
     
-    system_prompt = """You are an elite, multi-million-subscriber viral YouTube Shorts producer. Your ONLY goal is GUARANTEED VIRALITY.
-Analyze the transcript and isolate the 5 absolute most mind-blowing, high-energy action sequences based on the query. Ignore boring commentary. Focus ONLY on jaw-dropping moments, massive plays, insane highlights, or shocking events that will instantly hook a viewer and make them share the video. 
+    system_prompt = f"""You are an elite, multi-million-subscriber viral YouTube Shorts producer. Your ONLY goal is GUARANTEED VIRALITY.
+Analyze the transcript and isolate the absolute most mind-blowing, high-energy action sequences based on the query. 
+The original video title is: "{youtube_title}" - Use this context to generate highly accurate and viral SEO metadata.
 Each clip must be between 20 and 30 seconds long.
 
 CRITICAL — HOOK SCRIPT RULES:
@@ -173,19 +183,11 @@ For each clip, write a SHORT, EXPLOSIVE 2-second intro script for a female sport
 GOOD examples (use this aggressive, direct style):
 - "WHAT. A. STRIKE! This is absolutely INSANE!"
 - "OH MY GOD! LOOK AT THAT!"
-- "NO WAY! He just did the IMPOSSIBLE!"
-- "THIS IS UNREAL! Watch this!"
-- "GOAAAAL! The crowd goes WILD!"
 
-BAD examples (NEVER use these weak styles):
-- "You won't believe what happens next" (too generic, clickbait)
-- "Watch until the end" (boring)
-- "This might be the craziest play" (too soft, uses 'might')
+The hook must sound like someone who just witnessed something incredible LIVE and is reacting with pure adrenaline. Keep it under 8 words.
 
-The hook must sound like someone who just witnessed something incredible LIVE and is reacting with pure adrenaline. Use CAPS for emphasis words. Keep it under 8 words.
-
-Also, determine the specific sport (e.g., "Football", "Hockey", "Cricket") so we can source the perfect hype track.
-Output strictly valid JSON. Format: { "sport_type": "Football", "clips": [{"start": 10.5, "end": 35.0, "hook_script": "WHAT A STRIKE! Absolutely UNREAL!", "title": "INSANE Goal You Have To See! 🔥⚽", "description": "Watch this incredible goal that left everyone speechless! #football #fifa #worldcup", "tags": ["football", "fifa", "world cup", "goals", "highlights", "viral"]}] }"""
+Also, determine the specific sport (e.g., "Football", "Hockey") AND the perfect music vibe for this specific moment (e.g., "epic intense cinematic", "fast paced phonk drift", "sad emotional orchestral").
+Output strictly valid JSON. Format: {{ "sport_type": "Football", "music_vibe": "epic intense cinematic", "clips": [{{"start": 10.5, "end": 35.0, "hook_script": "WHAT A STRIKE! Absolutely UNREAL!", "title": "INSANE Goal You Have To See! 🔥⚽", "description": "Watch this incredible goal that left everyone speechless! #football #fifa", "tags": ["football", "fifa", "viral"]}}] }}"""
 
     available_models = []
     try:
@@ -287,7 +289,7 @@ def compose_hybrid_video(local_segment_video, clip, idx, hook_voice, bg_music, t
     })
     
     output_vid_abs = os.path.abspath(output_vid)
-    res = subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--jpeg-quality=90"], cwd="bouncy-subs", capture_output=False)
+    res = subprocess.run(["npx.cmd" if os.name == 'nt' else "npx", "remotion", "render", "BouncySubs", output_vid_abs, f"--props={props}", "--timeout=120000", "--jpeg-quality=100", "--concurrency=4"], cwd="bouncy-subs", capture_output=False)
     if res.returncode != 0:
         raise RuntimeError(f"Remotion render failed with exit code {res.returncode}")
     print(f"   ✅ Saved: {output_vid}")
@@ -299,6 +301,10 @@ def main():
     args = parser.parse_args()
 
     try:
+        from pytubefix import YouTube
+        yt = YouTube(args.url, client='ANDROID')
+        yt_title = yt.title
+        
         import urllib.parse as urlparse
         parsed = urlparse.urlparse(args.url)
         vid_id = urlparse.parse_qs(parsed.query).get('v', ['output'])[0] if 'youtube.com' in args.url else args.url.split('/')[-1]
@@ -308,9 +314,10 @@ def main():
 
         audio_file = download_full_audio_for_whisper(args.url)
         transcript = transcribe_audio(audio_file)
-        ai_response = get_viral_scripts(transcript, args.prompt)
+        ai_response = get_viral_scripts(transcript, args.prompt, yt_title)
         
         sport_type = ai_response.get("sport_type", "epic sports")
+        music_vibe = ai_response.get("music_vibe", "epic cinematic phonk")
         viral_clips = ai_response.get("clips", [])
         
         for i, clip in enumerate(viral_clips):
@@ -325,7 +332,9 @@ def main():
                 download_youtube_video(args.url, clip['start'], clip['end'], segment_video)
             
             hook_voice = f"temp_hook_{i+1}.mp3"
-            bg_music = get_unique_background_music(i, sport_type)
+            
+            # Save temporary music_vibe wrapper for get_unique_background_music
+            bg_music = get_unique_background_music(i, f"{sport_type} {music_vibe}")
             
             asyncio.run(generate_voiceover(clip['hook_script'], hook_voice))
             
@@ -334,9 +343,9 @@ def main():
             # Save SEO metadata for the uploader
             md_path = os.path.join(out_dir, f"Viral_Short_{i+1}.md")
             with open(md_path, "w", encoding="utf-8") as f:
-                f.write(f"### 1. Title\n{clip.get('title', f'Epic Football Moment #{i+1}')}\n\n")
-                f.write(f"### 3. Description\n{clip.get('description', 'Incredible football highlights!')}\n\n")
-                f.write(f"### 4. Tags\n{', '.join(clip.get('tags', ['football', 'fifa']))}\n")
+                f.write(f"### 1. Title\n{clip.get('title', f'Epic {sport_type} Moment #{i+1}')}\n\n")
+                f.write(f"### 3. Description\n{clip.get('description', 'Incredible sports highlights!')}\n\n")
+                f.write(f"### 4. Tags\n{', '.join(clip.get('tags', [sport_type, 'viral']))}\n")
             
             for file in [hook_voice, bg_music, segment_video]:
                 if file and os.path.exists(file): os.remove(file)

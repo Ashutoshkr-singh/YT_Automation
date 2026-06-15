@@ -34,7 +34,7 @@ from google.auth.transport.requests import Request
 # ---------------------------------------------------------------------------
 CLIENT_SECRET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "client_secret.json")
 TOKEN_PICKLE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.pickle")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]
 API_SERVICE_NAME = "youtube"
 API_VERSION = "v3"
 
@@ -179,6 +179,30 @@ def parse_seo_markdown(md_path: str) -> dict:
     return result
 
 
+def upload_caption(youtube, video_id, srt_path):
+    if not srt_path or not os.path.exists(srt_path):
+        return
+        
+    print(f"   💬 Attaching subtitles: {os.path.basename(srt_path)}")
+    media = MediaFileUpload(srt_path, mimetype="text/plain", resumable=True)
+    body = {
+        "snippet": {
+            "videoId": video_id,
+            "language": "en",
+            "name": "English",
+            "isDraft": False
+        }
+    }
+    try:
+        youtube.captions().insert(
+            part="snippet",
+            body=body,
+            media_body=media
+        ).execute()
+        print("   ✅ Subtitles attached successfully!")
+    except Exception as e:
+        print(f"   ⚠️ Failed to attach subtitles: {e}")
+
 # ---------------------------------------------------------------------------
 # Upload (resumable)
 # ---------------------------------------------------------------------------
@@ -188,6 +212,7 @@ def upload_video(
     description: str,
     tags: list = None,
     category_id: str = "17",
+    srt_path: str = None
 ) -> str:
     """
     Upload a single video to YouTube via the Data API v3 resumable upload.
@@ -269,6 +294,10 @@ def upload_video(
 
     video_id = response.get("id", "unknown")
     print(f"   ✅ Upload complete! → https://youtu.be/{video_id}")
+    
+    if srt_path:
+        upload_caption(youtube, video_id, srt_path)
+        
     return video_id
 
 
@@ -314,6 +343,11 @@ def batch_upload(output_dir: str) -> list:
                 seo_path = candidate
                 break
 
+        # Search for matching SRT file
+        srt_path = f"{stem}.srt"
+        if not os.path.isfile(srt_path):
+            srt_path = None
+
         try:
             if seo_path:
                 print(f"\n📝 Found SEO metadata: {os.path.basename(seo_path)}")
@@ -332,6 +366,7 @@ def batch_upload(output_dir: str) -> list:
                 title=title,
                 description=description,
                 tags=tags,
+                srt_path=srt_path
             )
             results.append((os.path.basename(video_path), video_id))
 

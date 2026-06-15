@@ -203,34 +203,40 @@ def run_full_pipeline():
         log.info("💤  No new highlights. Pipeline idle.")
         return
 
-    # Process only the first new highlight (to stay within quotas)
-    target = new_highlights[0]
-    log.info("🎯  Processing: %s", target["title"])
-
-    # Step 2: Generate clips
-    output_dir = generate_clips(target["url"], num_clips=3)
-    if not output_dir:
-        log.error("💀  Pipeline halted: clip generation failed.")
-        return
-
-    # Step 3: Run SEO agent
-    seo_files = run_seo_on_clips(output_dir)
-    if not seo_files:
-        log.warning("⚠️  SEO generation failed, uploading with basic metadata...")
-
-    # Step 4: Upload
-    uploaded = upload_clips(output_dir)
-
-    # Mark as processed
-    from monitor import mark_as_processed
-    mark_as_processed(target["id"])
+    total_uploaded = 0
+    total_seo = 0
+    
+    # Process ALL new highlights, but generate exactly 1 viral clip per video
+    for target in new_highlights:
+        log.info("🎯  Processing: %s", target["title"])
+    
+        # Step 2: Generate clips
+        output_dir = generate_clips(target["url"], num_clips=1)
+        if not output_dir:
+            log.error("💀  Clip generation failed for this video. Skipping to next.")
+            continue
+    
+        # Step 3: Run SEO agent
+        seo_files = run_seo_on_clips(output_dir)
+        if not seo_files:
+            log.warning("⚠️  SEO generation failed, uploading with basic metadata...")
+    
+        # Step 4: Upload
+        uploaded = upload_clips(output_dir)
+    
+        # Mark as processed
+        from monitor import mark_as_processed
+        mark_as_processed(target["id"])
+        
+        total_uploaded += uploaded
+        total_seo += len(seo_files)
 
     elapsed = time.time() - start_time
     log.info("=" * 60)
     log.info("🎉  PIPELINE COMPLETE!")
-    log.info("   Video: %s", target["title"][:60])
-    log.info("   Clips uploaded: %d", uploaded)
-    log.info("   SEO files: %d", len(seo_files))
+    log.info("   Videos processed: %d", len(new_highlights))
+    log.info("   Clips uploaded: %d", total_uploaded)
+    log.info("   SEO files: %d", total_seo)
     log.info("   Total time: %.1f minutes", elapsed / 60)
     log.info("=" * 60)
 
@@ -250,7 +256,7 @@ def main():
     if args.scan_only:
         scan_for_new_highlights()
     elif args.process_only:
-        output_dir = generate_clips(args.process_only, num_clips=3)
+        output_dir = generate_clips(args.process_only, num_clips=1)
         if output_dir:
             seo_files = run_seo_on_clips(output_dir)
             log.info("✅  Clips ready at: %s", output_dir)
