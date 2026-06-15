@@ -18,14 +18,21 @@ import urllib.request
 import random
 from gradio_client import Client, handle_file
 
+YTDLP_EXE = shutil.which("yt-dlp") or "yt-dlp"
+
 def _ytdlp_base_args():
     """Return base yt-dlp args with cookies and JS solver if available."""
-    import shutil
-    exe = shutil.which("yt-dlp") or "yt-dlp"
-    args = [exe, "--remote-components", "ejs:github", "--extractor-args", "youtube:player_client=tv,default"]
-    if os.path.exists("cookies.txt"):
-        args += ["--cookies", "cookies.txt"]
-    return args
+    cmd = [
+        YTDLP_EXE,
+        "--no-playlist",
+        "--geo-bypass",
+        "--remote-components", "ejs:github",
+        "--extractor-args", "youtube:player_client=ios,web_creator,default"
+    ]
+    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
+    if os.path.exists(cookies_path):
+        cmd.extend(["--cookies", cookies_path])
+    return cmd
 
 def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.mp3"):
     print("➔ Downloading audio track for transcription...")
@@ -94,6 +101,9 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
                     temp_aud = output_path.replace(".mp4", "_aud.mp4")
                     vid_stream.download(filename=temp_vid, timeout=300)
                     aud_stream.download(filename=temp_aud, timeout=300)
+                    
+                    if not os.path.exists(temp_vid) or not os.path.exists(temp_aud):
+                        raise RuntimeError("pytubefix download failed silently (file not found)")
                     
                     # Merge high-quality video and audio while cropping
                     res = subprocess.run([
