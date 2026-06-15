@@ -121,40 +121,12 @@ def fetch_recent_videos(max_videos: int = 15) -> list[dict]:
 
 def is_highlight_video(title: str, duration: int) -> bool:
     """
-    Only process videos that are actual match highlights, goals compilations,
-    or skill showcases. Skip press conferences, interviews, and behind-the-scenes
-    content because they're talking-head footage that can't produce viral sports clips.
+    Process EVERY video uploaded to the channel.
+    Only filter out Shorts (<30s) and extremely long full matches (>3 hours).
     """
-    title_lower = title.lower()
-    
-    # Reject patterns — these are never clippable
-    skip_keywords = [
-        "press conference", "post-match interview", "post match interview",
-        "takes questions", "take questions", "coach on", "coach talks",
-        "behind the scenes", "draw ceremony", "letters that unite"
-    ]
-    for skip in skip_keywords:
-        if skip in title_lower:
-            return False
-    
-    # Accept patterns — these always produce good clips
-    accept_keywords = [
-        "highlight", "goals", "recap", "best moments", "match day",
-        "goal of the day", "all goals", "top goals", "extended highlights",
-        "full highlights", "great goals", "best of", "skills", "final",
-        "semi-final", "quarter-final", "group stage", "team feature"
-    ]
-    for kw in accept_keywords:
-        if kw in title_lower:
-            # Duration sanity check: skip shorts (<30s) and full matches (>3hr)
-            if duration and duration > 0:
-                return 30 <= duration <= 10800
-            return True
-    
-    # For anything else, accept if duration is reasonable
     if duration and duration > 0:
         return 30 <= duration <= 10800
-    
+
     return True
 
 
