@@ -301,9 +301,24 @@ def main():
     args = parser.parse_args()
 
     try:
-        from pytubefix import YouTube
-        yt = YouTube(args.url, client='ANDROID')
-        yt_title = yt.title
+        # Try to get the original video title for context-aware SEO
+        yt_title = "FIFA Highlights"
+        try:
+            from pytubefix import YouTube as PTF
+            yt = PTF(args.url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
+            yt_title = yt.title
+        except Exception as e:
+            print(f"   ⚠️ pytubefix title fetch failed ({e}), trying yt-dlp...")
+            try:
+                title_result = subprocess.run(
+                    _ytdlp_base_args() + ["--print", "%(title)s", "--no-download", args.url],
+                    capture_output=True, text=True, timeout=30
+                )
+                if title_result.returncode == 0 and title_result.stdout.strip():
+                    yt_title = title_result.stdout.strip()
+            except Exception:
+                pass
+        print(f"📺 Original video title: {yt_title}")
         
         import urllib.parse as urlparse
         parsed = urlparse.urlparse(args.url)
