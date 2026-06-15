@@ -153,7 +153,7 @@ def transcribe_audio(audio_path):
         
     url = "https://api.groq.com/openai/v1/audio/translations"
     headers = {"Authorization": f"Bearer {api_key}"}
-    data = {"model": "whisper-large-v3-turbo", "response_format": "verbose_json"}
+    data = {"model": "whisper-large-v3", "response_format": "verbose_json"}
     
     with open(audio_path, "rb") as f:
         files = {"file": (os.path.basename(audio_path), f, "audio/mpeg")}
