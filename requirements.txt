@@ -9,3 +9,4 @@ ffmpeg-python
 requests
 gradio_client
 pytubefix
+curl_cffi

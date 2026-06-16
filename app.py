@@ -27,7 +27,8 @@ def _ytdlp_base_args():
         "--no-playlist",
         "--geo-bypass",
         "--remote-components", "ejs:github",
-        "--extractor-args", "youtube:player_client=android,ios,web_creator,default"
+        "--extractor-args", "youtube:player_client=android,ios,web_creator,default",
+        "--impersonate", "chrome"
     ]
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     if os.path.exists(cookies_path):
@@ -54,7 +55,7 @@ def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.
             if result.returncode != 0:
                 print("   ↻ Falling back to pytubefix for audio...")
                 from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='ANDROID')
+                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
                 audio_stream = yt.streams.filter(only_audio=True).first()
                 if audio_stream:
                     temp_file = output_path.replace(".mp3", "_temp")
@@ -92,7 +93,7 @@ def download_youtube_video(youtube_url, start_time, end_time, output_path):
             if result.returncode != 0:
                 print("   ↻ Falling back to pytubefix 1080p video + audio merge...")
                 from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='ANDROID')
+                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
                 vid_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
                 aud_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_audio=True).order_by('abr').desc().first()
                 
