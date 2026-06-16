@@ -28,100 +28,76 @@ def _ytdlp_base_args():
         "--geo-bypass",
         "--remote-components", "ejs:github",
         "--extractor-args", "youtube:player_client=android,ios,web_creator,default",
-        "--impersonate", "chrome"
+        "--impersonate", "chrome",
+        "--force-ipv6"
     ]
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     if os.path.exists(cookies_path):
         cmd.extend(["--cookies", cookies_path])
     return cmd
 
+def get_rapidapi_stream_urls(youtube_url):
+    import urllib.request, json, ssl, re
+    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", youtube_url)
+    video_id = match.group(1) if match else youtube_url
+    url = f'https://youtube-media-downloader.p.rapidapi.com/v2/video/details?videoId={video_id}'
+    req = urllib.request.Request(url, headers={
+        'x-rapidapi-host': 'youtube-media-downloader.p.rapidapi.com',
+        'x-rapidapi-key': '1b6e7b51admsh0df00418041aee6p1a5a1cjsn4274af0ba0d9'
+    })
+    try:
+        res = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context()).read().decode())
+        vid_url = None
+        aud_url = None
+        
+        videos = res.get('videos', {}).get('items', [])
+        for v in videos:
+            if v.get('quality') == '1080p50' and v.get('extension') == 'mp4':
+                vid_url = v.get('url')
+                break
+        if not vid_url:
+            for v in videos:
+                if '1080' in str(v.get('quality')) and v.get('extension') == 'mp4':
+                    vid_url = v.get('url')
+                    break
+        if not vid_url and videos:
+            vid_url = videos[0].get('url')
+
+        audios = res.get('audios', {}).get('items', [])
+        if audios:
+            aud_url = audios[0].get('url')
+        
+        return vid_url, aud_url
+    except Exception as e:
+        print(f"RapidAPI Error: {e}")
+        return None, None
+
 def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.mp3"):
     print("➔ Downloading audio track for transcription...")
-    cmd = _ytdlp_base_args() + [
-        "-x", "--audio-format", "mp3",
-        "-o", output_path.replace(".mp3", ""),
-        youtube_url
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, timeout=300)
-        if result.returncode != 0:
-            stderr = result.stderr.decode('utf-8', errors='ignore')
-            print(f"yt-dlp audio stderr: {stderr}")
-            # If cookies failed, retry without cookies
-            if "cookies" in stderr.lower() or "bot" in stderr.lower():
-                print("   ↻ Retrying without cookies...")
-                cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
-                result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=300)
-            if result.returncode != 0:
-                print("   ↻ Falling back to pytubefix for audio...")
-                from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
-                audio_stream = yt.streams.filter(only_audio=True).first()
-                if audio_stream:
-                    temp_file = output_path.replace(".mp3", "_temp")
-                    actual_temp_file = audio_stream.download(filename=temp_file, timeout=120)
-                    res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_file, "-b:a", "64k", "-map", "a", output_path], capture_output=True, text=True, timeout=120)
-                    if os.path.exists(actual_temp_file):
-                        os.remove(actual_temp_file)
-                    if res.returncode != 0:
-                        raise RuntimeError(f"ffmpeg audio extract failed: {res.stderr}")
-                    return output_path
-                raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("yt-dlp audio download timed out after 5 minutes")
+    _, aud_url = get_rapidapi_stream_urls(youtube_url)
+    if not aud_url:
+        raise RuntimeError("RapidAPI failed to provide an audio stream.")
+    
+    res = subprocess.run(["ffmpeg", "-y", "-i", aud_url, "-b:a", "64k", "-map", "a", output_path], capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(f"ffmpeg audio extract failed: {res.stderr}")
     return output_path
 
 def download_youtube_video(youtube_url, start_time, end_time, output_path):
     print(f"➔ Downloading high-quality segment ({start_time}s to {end_time}s) for final render...")
-    cmd = _ytdlp_base_args() + [
-        "--download-sections", f"*{start_time}-{end_time}",
-        "--force-keyframes-at-cuts",
-        "-f", "bestvideo+bestaudio/best",
-        "--merge-output-format", "mp4",
-        "-o", output_path,
-        youtube_url
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, timeout=600)
-        if result.returncode != 0:
-            stderr = result.stderr.decode('utf-8', errors='ignore')
-            print(f"yt-dlp video stderr: {stderr}")
-            if "cookies" in stderr.lower() or "bot" in stderr.lower():
-                print("   ↻ Retrying without cookies...")
-                cmd_no_cookies = [c for c in cmd if c not in ["--cookies", "cookies.txt"]]
-                result = subprocess.run(cmd_no_cookies, capture_output=True, timeout=600)
-            if result.returncode != 0:
-                print("   ↻ Falling back to pytubefix 1080p video + audio merge...")
-                from pytubefix import YouTube
-                yt = YouTube(youtube_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
-                vid_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_video=True).order_by('resolution').desc().first()
-                aud_stream = yt.streams.filter(adaptive=True, file_extension='mp4', only_audio=True).order_by('abr').desc().first()
-                
-                if vid_stream and aud_stream:
-                    temp_vid = output_path.replace(".mp4", "_vid.mp4")
-                    temp_aud = output_path.replace(".mp4", "_aud.mp4")
-                    vid_stream.download(filename=temp_vid, timeout=300)
-                    aud_stream.download(filename=temp_aud, timeout=300)
-                    
-                    if not os.path.exists(temp_vid) or not os.path.exists(temp_aud):
-                        raise RuntimeError("pytubefix download failed silently (file not found)")
-                    
-                    # Merge high-quality video and audio while cropping
-                    res = subprocess.run([
-                        "ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time),
-                        "-i", temp_vid, "-ss", str(start_time), "-to", str(end_time),
-                        "-i", temp_aud, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                        output_path
-                    ], capture_output=True, text=True, timeout=120)
-                    
-                    if os.path.exists(temp_vid): os.remove(temp_vid)
-                    if os.path.exists(temp_aud): os.remove(temp_aud)
-                    if res.returncode != 0:
-                        raise RuntimeError(f"ffmpeg merge/crop failed: {res.stderr}")
-                    return output_path
-                raise RuntimeError(f"yt-dlp failed: {result.stderr.decode('utf-8', errors='ignore')}")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("yt-dlp video download timed out after 10 minutes")
+    vid_url, aud_url = get_rapidapi_stream_urls(youtube_url)
+    if not vid_url or not aud_url:
+        raise RuntimeError("RapidAPI failed to provide video/audio streams.")
+    
+    res = subprocess.run([
+        "ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time),
+        "-i", vid_url, "-ss", str(start_time), "-to", str(end_time),
+        "-i", aud_url, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        output_path
+    ], capture_output=True, text=True)
+    
+    if res.returncode != 0:
+        raise RuntimeError(f"ffmpeg merge/crop failed: {res.stderr}")
     return output_path
 
 def get_unique_background_music(index, sport_type):
@@ -135,18 +111,13 @@ def get_unique_background_music(index, sport_type):
     search_query = random.choice(music_styles)
     output_base = f"bg_music_{index}"
     try:
-        from pytubefix import Search, YouTube
+        from pytubefix import Search
         s = Search(search_query)
         if s.videos:
             yt = s.videos[0]
-            yt = YouTube(yt.watch_url, client='ANDROID', use_oauth=True, allow_oauth_cache=True)
-            audio_stream = yt.streams.filter(only_audio=True).first()
-            if audio_stream:
-                temp_audio = f"{output_base}_temp.mp4"
-                actual_temp_audio = audio_stream.download(filename=temp_audio, timeout=120)
-                res = subprocess.run(["ffmpeg", "-y", "-i", actual_temp_audio, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True, timeout=120)
-                if os.path.exists(actual_temp_audio):
-                    os.remove(actual_temp_audio)
+            _, aud_url = get_rapidapi_stream_urls(yt.watch_url)
+            if aud_url:
+                res = subprocess.run(["ffmpeg", "-y", "-i", aud_url, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True)
                 if res.returncode != 0:
                     raise RuntimeError(f"ffmpeg bg music extract failed: {res.stderr}")
                 return f"{output_base}.mp3"

@@ -10,3 +10,4 @@ requests
 gradio_client
 pytubefix==10.9.0
 curl_cffi
+git+https://github.com/yt-dlp/yt-dlp.git@master
