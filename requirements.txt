@@ -8,5 +8,5 @@ google-auth-oauthlib
 ffmpeg-python
 requests
 gradio_client
-pytubefix
+pytubefix==10.9.0
 curl_cffi
