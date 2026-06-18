@@ -59,7 +59,10 @@ jobs:
 
       - name: Write fresh YouTube cookies
         run: |
-          echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 --decode > cookies.txt
+          echo "${{ secrets.YOUTUBE_COOKIES }}${{ secrets.YOUTUBE_COOKIES_B64 }}" | tr -d '\n\r\t ' | base64 --decode > cookies.txt
+          python -c "import os; content=open('cookies.txt').read().strip(); open('cookies.txt', 'w').write('# Netscape HTTP Cookie File\n' + content if not content.startswith('# Netscape') else content)"
+          echo "Cookies file size:"
+          ls -lh cookies.txt
 
       - name: Write YouTube OAuth Token
         env:
