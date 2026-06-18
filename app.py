@@ -28,8 +28,7 @@ def _ytdlp_base_args():
         "--geo-bypass",
         "--remote-components", "ejs:github",
         "--extractor-args", "youtube:player_client=android,ios,web_creator,default",
-        "--impersonate", "chrome",
-        "--force-ipv6"
+        "--impersonate", "chrome"
     ]
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     if os.path.exists(cookies_path):
