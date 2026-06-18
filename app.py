@@ -37,67 +37,36 @@ def _ytdlp_base_args():
     return cmd
 
 def get_rapidapi_stream_urls(youtube_url):
-    import urllib.request, json, ssl, re
-    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", youtube_url)
-    video_id = match.group(1) if match else youtube_url
-    url = f'https://youtube-media-downloader.p.rapidapi.com/v2/video/details?videoId={video_id}'
-    req = urllib.request.Request(url, headers={
-        'x-rapidapi-host': 'youtube-media-downloader.p.rapidapi.com',
-        'x-rapidapi-key': '1b6e7b51admsh0df00418041aee6p1a5a1cjsn4274af0ba0d9'
-    })
-    try:
-        res = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context()).read().decode())
-        vid_url = None
-        aud_url = None
-        
-        videos = res.get('videos', {}).get('items', [])
-        for v in videos:
-            if v.get('quality') == '1080p50' and v.get('extension') == 'mp4':
-                vid_url = v.get('url')
-                break
-        if not vid_url:
-            for v in videos:
-                if '1080' in str(v.get('quality')) and v.get('extension') == 'mp4':
-                    vid_url = v.get('url')
-                    break
-        if not vid_url and videos:
-            vid_url = videos[0].get('url')
-
-        audios = res.get('audios', {}).get('items', [])
-        if audios:
-            aud_url = audios[0].get('url')
-        
-        return vid_url, aud_url
-    except Exception as e:
-        print(f"RapidAPI Error: {e}")
-        return None, None
+    pass # Deprecated in favor of native yt-dlp
 
 def download_full_audio_for_whisper(youtube_url, output_path="audio_for_whisper.mp3"):
-    print("➔ Downloading audio track for transcription...")
-    _, aud_url = get_rapidapi_stream_urls(youtube_url)
-    if not aud_url:
-        raise RuntimeError("RapidAPI failed to provide an audio stream.")
-    
-    res = subprocess.run(["ffmpeg", "-y", "-i", aud_url, "-b:a", "64k", "-map", "a", output_path], capture_output=True, text=True)
+    print("➔ Downloading audio track for transcription using yt-dlp...")
+    cmd = _ytdlp_base_args() + [
+        "-f", "bestaudio/best",
+        "-x", "--audio-format", "mp3",
+        "-o", output_path,
+        youtube_url
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        raise RuntimeError(f"ffmpeg audio extract failed: {res.stderr}")
+        raise RuntimeError(f"yt-dlp audio extract failed:\n{res.stderr}")
     return output_path
 
 def download_youtube_video(youtube_url, start_time, end_time, output_path):
     print(f"➔ Downloading high-quality segment ({start_time}s to {end_time}s) for final render...")
-    vid_url, aud_url = get_rapidapi_stream_urls(youtube_url)
-    if not vid_url or not aud_url:
-        raise RuntimeError("RapidAPI failed to provide video/audio streams.")
     
-    res = subprocess.run([
-        "ffmpeg", "-y", "-ss", str(start_time), "-to", str(end_time),
-        "-i", vid_url, "-ss", str(start_time), "-to", str(end_time),
-        "-i", aud_url, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-        output_path
-    ], capture_output=True, text=True)
+    # Use yt-dlp to download just the specific segment
+    cmd = _ytdlp_base_args() + [
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--download-sections", f"*{start_time}-{end_time}",
+        "--force-keyframes-at-cuts",
+        "-o", output_path,
+        youtube_url
+    ]
     
+    res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        raise RuntimeError(f"ffmpeg merge/crop failed: {res.stderr}")
+        raise RuntimeError(f"yt-dlp merge/crop failed:\n{res.stderr}")
     return output_path
 
 def get_unique_background_music(index, sport_type):
@@ -115,12 +84,18 @@ def get_unique_background_music(index, sport_type):
         s = Search(search_query)
         if s.videos:
             yt = s.videos[0]
-            _, aud_url = get_rapidapi_stream_urls(yt.watch_url)
-            if aud_url:
-                res = subprocess.run(["ffmpeg", "-y", "-i", aud_url, "-q:a", "0", "-map", "a", f"{output_base}.mp3"], capture_output=True, text=True)
-                if res.returncode != 0:
-                    raise RuntimeError(f"ffmpeg bg music extract failed: {res.stderr}")
+            # Try to download background music with yt-dlp
+            cmd = _ytdlp_base_args() + [
+                "-f", "bestaudio",
+                "-x", "--audio-format", "mp3",
+                "-o", f"{output_base}.mp3",
+                yt.watch_url
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
                 return f"{output_base}.mp3"
+            else:
+                raise RuntimeError(f"yt-dlp bg music extract failed: {res.stderr}")
     except Exception as e:
         print(f"   ⚠️ Background music fetch failed: {e}")
     return None
